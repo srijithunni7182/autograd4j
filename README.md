@@ -59,11 +59,13 @@ To verify the autograd engine and model components:
    ```
 
 
+
 ## Documentation
 
-Full project documentation, including Javadocs and the Visualization Guide, is available in the `docs` directory.
+Full project documentation is available online:
+- [**Online Documentation**](https://srijithunni7182.github.io/autograd4j/) (Javadoc & Guides)
 
-- [Open Documentation](docs/index.html) (Open in your browser)
+*Note: If viewing locally, open `docs/index.html` in your browser.*
 
 ## License
 
