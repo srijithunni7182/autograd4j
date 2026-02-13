@@ -1,0 +1,1 @@
+typeSearchIndex = [{"l":"All Classes and Interfaces","u":"allclasses-index.html"},{"p":"com.autograd","l":"MicroGPT"},{"p":"com.autograd","l":"NeuralOps"},{"p":"com.autograd","l":"Tokenizer"},{"p":"com.autograd","l":"Value"}];updateSearchResults();
