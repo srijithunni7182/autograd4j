@@ -24,17 +24,20 @@ It trains a tiny GPT model on a list of human names, then generates new ones.
 ## Quick Start
 
 ### Prerequisites
+
 - Java 11 or higher (Tested with Java 21)
 
-### compiling and Running
+### Compiling and Running
 
 1. **Compile the project:**
+
    ```bash
    mkdir -p bin
    javac -d bin src/main/java/com/autograd/*.java
    ```
 
 2. **Run the training and generation:**
+
    ```bash
    java -cp bin com.autograd.MicroGPT
    ```
