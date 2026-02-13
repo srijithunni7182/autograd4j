@@ -12,6 +12,8 @@ It trains a tiny GPT model on a list of human names, then generates new ones.
 
 **New to ML?** Start with the [Prerequisites guide](PREREQUISITES.md) — it covers all the math and ML concepts you need, from scratch.
 
+**Curious about the journey?** Read [**De-mystifying GPT: A Java Odyssey**](ARTICLE.md) to understand the core concepts I learned while building this.
+
 ## Project Structure
 
 | File | Responsibility |
