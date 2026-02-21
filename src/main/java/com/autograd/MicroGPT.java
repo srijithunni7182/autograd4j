@@ -181,6 +181,7 @@ public class MicroGPT {
         for (int i = 0; i < tokEmb.length; i++) {
             x[i] = tokEmb[i].add(posEmb[i]);
         }
+        x = NeuralOps.rmsNorm(x); // normalize before entering transformer layers
 
         for (int li = 0; li < nLayer; li++) {
             // =================================================================
@@ -257,9 +258,9 @@ public class MicroGPT {
             x = NeuralOps.rmsNorm(x);
             x = NeuralOps.linear(x, stateDict.get("layer" + li + ".mlp_fc1")); // expand
 
-            // Squared ReLU
+            // ReLU activation
             for (int i = 0; i < x.length; i++)
-                x[i] = x[i].relu().pow(2);
+                x[i] = x[i].relu();
 
             x = NeuralOps.linear(x, stateDict.get("layer" + li + ".mlp_fc2")); // compress
 
@@ -269,7 +270,7 @@ public class MicroGPT {
         }
 
         // Final prediction
-        return NeuralOps.linear(x, stateDict.get("wte")); // Weight tying
+        return NeuralOps.linear(x, stateDict.get("lm_head")); // Separate output projection
     }
 
     /**
@@ -290,6 +291,7 @@ public class MicroGPT {
         for (int i = 0; i < tokEmb.length; i++) {
             x[i] = tokEmb[i].add(posEmb[i]);
         }
+        x = NeuralOps.rmsNorm(x); // normalize before entering transformer layers
 
         for (int li = 0; li < nLayer; li++) {
             // =================================================================
@@ -377,9 +379,9 @@ public class MicroGPT {
             x = NeuralOps.rmsNorm(x);
             x = NeuralOps.linear(x, stateDict.get("layer" + li + ".mlp_fc1")); // expand
 
-            // Squared ReLU
+            // ReLU activation
             for (int i = 0; i < x.length; i++)
-                x[i] = x[i].relu().pow(2);
+                x[i] = x[i].relu();
 
             x = NeuralOps.linear(x, stateDict.get("layer" + li + ".mlp_fc2")); // compress
 
@@ -389,7 +391,7 @@ public class MicroGPT {
         }
 
         // Final prediction
-        return NeuralOps.linear(x, stateDict.get("wte")); // Weight tying
+        return NeuralOps.linear(x, stateDict.get("lm_head")); // Separate output projection
     }
 
     /**
@@ -404,7 +406,7 @@ public class MicroGPT {
         // Parse CLI arguments
         nEmbd = parseArg(args, "n_embd", 16);
         nLayer = parseArg(args, "n_layer", 1);
-        blockSize = parseArg(args, "block_size", 8);
+        blockSize = parseArg(args, "block_size", 16);
         numSteps = parseArg(args, "num_steps", 1000);
         nHead = parseArg(args, "n_head", 4);
         learningRate = parseArg(args, "learning_rate", 1e-2);
@@ -448,18 +450,19 @@ public class MicroGPT {
         // ---------------------------------------------------------------------
         // MODEL PARAMETERS
         // ---------------------------------------------------------------------
-        stateDict.put("wte", matrix(tokenizer.vocabSize, nEmbd, 0.02));
-        stateDict.put("wpe", matrix(blockSize, nEmbd, 0.02));
+        stateDict.put("wte", matrix(tokenizer.vocabSize, nEmbd, 0.08));
+        stateDict.put("wpe", matrix(blockSize, nEmbd, 0.08));
+        stateDict.put("lm_head", matrix(tokenizer.vocabSize, nEmbd, 0.08));
 
         for (int i = 0; i < nLayer; i++) {
-            stateDict.put("layer" + i + ".attn_wq", matrix(nEmbd, nEmbd, 0.02));
-            stateDict.put("layer" + i + ".attn_wk", matrix(nEmbd, nEmbd, 0.02));
-            stateDict.put("layer" + i + ".attn_wv", matrix(nEmbd, nEmbd, 0.02));
-            stateDict.put("layer" + i + ".attn_wo", matrix(nEmbd, nEmbd, 0.0)); // zero init
-            stateDict.put("layer" + i + ".mlp_fc1", matrix(4 * nEmbd, nEmbd, 0.02));
-            stateDict.put("layer" + i + ".mlp_fc2", matrix(nEmbd, 4 * nEmbd, 0.0)); // zero init
+            stateDict.put("layer" + i + ".attn_wq", matrix(nEmbd, nEmbd, 0.08));
+            stateDict.put("layer" + i + ".attn_wk", matrix(nEmbd, nEmbd, 0.08));
+            stateDict.put("layer" + i + ".attn_wv", matrix(nEmbd, nEmbd, 0.08));
+            stateDict.put("layer" + i + ".attn_wo", matrix(nEmbd, nEmbd, 0.08));
+            stateDict.put("layer" + i + ".mlp_fc1", matrix(4 * nEmbd, nEmbd, 0.08));
+            stateDict.put("layer" + i + ".mlp_fc2", matrix(nEmbd, 4 * nEmbd, 0.08));
             if (useGated) {
-                stateDict.put("layer" + i + ".attn_gate", matrix(nEmbd, nEmbd, 0.02));
+                stateDict.put("layer" + i + ".attn_gate", matrix(nEmbd, nEmbd, 0.08));
             }
         }
 
@@ -467,6 +470,7 @@ public class MicroGPT {
         List<String> paramKeys = new ArrayList<>();
         paramKeys.add("wte");
         paramKeys.add("wpe");
+        paramKeys.add("lm_head");
         for (int i = 0; i < nLayer; i++) {
             paramKeys.add("layer" + i + ".attn_wq");
             paramKeys.add("layer" + i + ".attn_wk");
@@ -502,16 +506,14 @@ public class MicroGPT {
      */
     static void train(List<String> docs) {
         // Adam optimizer state
-        double beta1 = 0.9, beta2 = 0.95, epsAdam = 1e-8;
+        double beta1 = 0.85, beta2 = 0.99, epsAdam = 1e-8;
         double[] mState = new double[parameters.size()];
         double[] vState = new double[parameters.size()];
 
         for (int step = 0; step < numSteps; step++) {
             String doc = docs.get(step % docs.size());
             List<Integer> tokens = tokenizer.encode(doc);
-            if (tokens.size() > blockSize) {
-                tokens = tokens.subList(0, blockSize);
-            }
+            int n = Math.min(blockSize, tokens.size() - 1);
 
             // Init KV Caches
             List<List<Value[]>> keys = new ArrayList<>();
@@ -521,10 +523,9 @@ public class MicroGPT {
                 values.add(new ArrayList<>());
             }
 
-            double lossF = 0.0;
-
-            // Forward pass
-            for (int posId = 0; posId < tokens.size() - 1; posId++) {
+            // Forward pass: accumulate losses
+            List<Value> losses = new ArrayList<>();
+            for (int posId = 0; posId < n; posId++) {
                 Value[] logits;
                 if (useGated) {
                     logits = gptGated(tokens.get(posId), posId, keys, values);
@@ -533,14 +534,22 @@ public class MicroGPT {
                 }
                 Value[] probs = NeuralOps.softmax(logits);
 
-                // Cross-entropy loss
+                // Cross-entropy loss for this position
                 int targetToken = tokens.get(posId + 1);
-                Value loss = probs[targetToken].log().neg();
-                loss = loss.mul(1.0 / (tokens.size() - 1)); // average
-
-                loss.backward();
-                lossF += loss.data;
+                Value lossT = probs[targetToken].log().neg();
+                losses.add(lossT);
             }
+
+            // Average loss over all positions
+            Value loss = new Value(0);
+            for (Value lt : losses) {
+                loss = loss.add(lt);
+            }
+            loss = loss.mul(1.0 / n);
+
+            // Single backward pass on the combined loss
+            loss.backward();
+            double lossF = loss.data;
 
             // Adam Update
             double lrT = learningRate * (1.0 - (double) step / numSteps);
@@ -580,6 +589,7 @@ public class MicroGPT {
             int tokenId = tokenizer.BOS;
             StringBuilder generated = new StringBuilder();
 
+            double temperature = 0.5; // controls creativity (lower = more conservative)
             for (int posId = 0; posId < blockSize; posId++) {
                 Value[] logits;
                 if (useGated) {
@@ -587,7 +597,13 @@ public class MicroGPT {
                 } else {
                     logits = gpt(tokenId, posId, keys, values);
                 }
-                Value[] probs = NeuralOps.softmax(logits);
+
+                // Apply temperature scaling
+                Value[] scaledLogits = new Value[logits.length];
+                for (int i = 0; i < logits.length; i++) {
+                    scaledLogits[i] = logits[i].div(temperature);
+                }
+                Value[] probs = NeuralOps.softmax(scaledLogits);
 
                 // Sample next token
                 double r = rng.nextDouble();
